@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>東京冬旅 Dec 2025</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        body { font-family: 'Noto Sans TC', 'Noto Sans JP', sans-serif; background-color: #F3F4F6; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .gps-pulse {
+            width: 14px; height: 14px; border: 2px solid #fff; border-radius: 50%;
+            background-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+            animation: pulse-blue 2s infinite;
+        }
+        @keyframes pulse-blue {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+    </style>
+</head>
+<body class="text-slate-700 h-screen flex flex-col overflow-hidden">
+
+    <div id="app" class="flex flex-col h-full max-w-md mx-auto w-full bg-white shadow-2xl relative sm:rounded-xl sm:my-4 sm:h-[95vh] sm:border-4 sm:border-slate-100">
+
+        <header class="bg-indigo-600 text-white shrink-0 z-20 shadow-md">
+            <div class="p-4 flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold tracking-wide flex items-center gap-2">
+                        <i class="ph-fill ph-airplane-tilt"></i> Tokyo 2025
+                    </h1>
+                    <p class="text-xs text-indigo-200 mt-0.5">29/11 - 06/12</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="flex bg-indigo-800/50 p-1 rounded-lg">
+                        <button @click="viewMode = 'plan'" :class="viewMode === 'plan' ? 'bg-white text-indigo-700 shadow-sm' : 'text-indigo-200'" class="p-2 rounded-md transition-all"><i class="ph-bold ph-calendar-check text-lg"></i></button>
+                        <button @click="viewMode = 'map'" :class="viewMode === 'map' ? 'bg-white text-indigo-700 shadow-sm' : 'text-indigo-200'" class="p-2 rounded-md transition-all"><i class="ph-bold ph-map-trifold text-lg"></i></button>
+                        <button @click="viewMode = 'money'" :class="viewMode === 'money' ? 'bg-white text-indigo-700 shadow-sm' : 'text-indigo-200'" class="p-2 rounded-md transition-all"><i class="ph-bold ph-currency-dollar text-lg"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex overflow-x-auto hide-scroll px-2 pb-3 space-x-3 snap-x">
+                <div v-for="(day, index) in days" :key="index" 
+                     @click="currentDayIdx = index"
+                     class="snap-center shrink-0 flex flex-col items-center justify-center w-16 h-16 rounded-xl cursor-pointer transition-all border-2"
+                     :class="currentDayIdx === index ? 'bg-white text-indigo-600 border-white shadow-lg scale-105' : 'bg-indigo-500/50 text-indigo-100 border-transparent hover:bg-indigo-500'">
+                    <span class="text-xs font-medium opacity-80">{{ day.shortDate }}</span>
+                    <span class="text-lg font-bold">D{{ index + 1 }}</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto bg-slate-50 relative hide-scroll">
+            
+            <transition name="fade" mode="out-in">
+                <div v-if="viewMode === 'plan'" :key="currentDayIdx" class="p-4 pb-24">
+                    
+                    <div class="bg-white p-4 rounded-2xl shadow-sm mb-6 border border-slate-100 flex justify-between items-start">
+                        <div>
+                            <h2 class="text-2xl font-bold text-slate-800">{{ currentDay.title }}</h2>
+                            <p class="text-xs text-indigo-500 mt-1 font-bold">{{ currentDay.date }}</p>
+                            <div v-if="currentDay.weatherTip" class="mt-2 text-xs bg-orange-50 text-orange-600 px-2 py-1 rounded inline-block">
+                                <i class="ph-bold ph-t-shirt"></i> {{ currentDay.weatherTip }}
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end">
+                            <div class="flex items-center gap-1 text-indigo-600">
+                                <i class="ph-duotone ph-sun text-3xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="relative pl-4 border-l-2 border-indigo-100 space-y-8">
+                        <div v-for="(item, idx) in currentDay.items" :key="idx" class="relative group">
+                            <div class="absolute -left-[21px] top-3 w-3 h-3 rounded-full border-2 border-white shadow-sm"
+                                 :class="item.type === 'food' ? 'bg-orange-400' : item.type === 'shop' ? 'bg-pink-400' : item.type === 'stay' ? 'bg-green-500' : 'bg-indigo-500'"></div>
+                            
+                            <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-100">
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex items-start gap-3">
+                                        
+                                        <div class="flex flex-col items-center w-16 shrink-0 gap-1">
+                                            <div class="relative bg-slate-50 border border-slate-200 rounded-lg w-full h-8 flex items-center justify-center">
+                                                <span class="text-sm font-bold text-slate-700 font-mono">{{ item.time || '--:--' }}</span>
+                                                <input v-model="item.time" type="time" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                                            </div>
+                                            <span class="text-[10px] px-2 py-0.5 rounded text-white" 
+                                                  :class="getTypeColor(item.type)">
+                                                {{ getTypeName(item.type) }}
+                                            </span>
+                                        </div>
+
+                                        <div class="flex-1 min-w-0">
+                                            <input v-model="item.activity" class="block w-full text-base font-bold text-slate-800 bg-transparent border-none p-0 focus:ring-0" placeholder="行程名稱...">
+                                            
+                                            <div class="flex items-center gap-1 mt-1">
+                                                <i class="ph-fill ph-map-pin text-indigo-400 text-xs shrink-0"></i>
+                                                <input v-model="item.location" class="flex-1 text-xs text-slate-500 bg-transparent border-none p-0 focus:ring-0 placeholder-slate-300 truncate" placeholder="地點">
+                                            </div>
+
+                                            <textarea v-model="item.note" rows="2" class="w-full mt-1 text-xs text-slate-500 bg-slate-50 rounded p-1 border-none focus:ring-0 resize-none" placeholder="備註..."></textarea>
+                                        </div>
+
+                                        <div class="flex flex-col gap-2 pt-1">
+                                            <a v-if="item.link" :href="item.link" target="_blank" class="text-blue-500 bg-blue-50 p-1.5 rounded-lg text-center">
+                                                <i class="ph-bold ph-link"></i>
+                                            </a>
+                                            <a :href="getGoogleMapLink(item.location)" target="_blank" class="text-indigo-500 bg-indigo-50 p-1.5 rounded-lg text-center">
+                                                <i class="ph-bold ph-navigation-arrow"></i>
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="item.image" class="mt-2 rounded-lg overflow-hidden border border-slate-100 relative group/img">
+                                        <img :src="item.image" alt="行程圖片" class="w-full h-32 object-cover" @error="handleImageError">
+                                        <div class="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] p-1 px-2 opacity-0 group-hover/img:opacity-100 transition">
+                                            {{ item.image }}
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+
+                        <button @click="addItem" class="flex items-center gap-2 text-indigo-400 hover:text-indigo-600 text-sm font-medium px-2 py-1 transition-colors relative -left-1">
+                            <div class="w-2 h-2 bg-indigo-300 rounded-full"></div>
+                            <i class="ph-bold ph-plus"></i> 新增行程
+                        </button>
+                    </div>
+                </div>
+            </transition>
+
+            <div v-if="viewMode === 'map'" class="h-full flex flex-col relative">
+                <div id="map" class="flex-1 w-full h-full bg-slate-200 z-0"></div>
+                
+                <div v-if="isMapLoading" class="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex flex-col items-center justify-center text-indigo-600">
+                    <i class="ph-duotone ph-spinner animate-spin text-4xl mb-2"></i>
+                    <span class="text-xs font-bold">載入地點中...</span>
+                </div>
+
+                <div class="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur rounded-xl p-3 shadow-lg border border-white/50 z-10 flex justify-between items-center">
+                    <div>
+                        <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">D{{ currentDayIdx + 1 }} MAP</div>
+                        <div class="text-sm font-bold text-slate-800">
+                            {{ currentDay.items.filter(i=>i.location).length }} 個地點
+                        </div>
+                    </div>
+                    <button @click="initMap" class="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div v-if="viewMode === 'money'" class="p-4 pb-24">
+                <div class="bg-indigo-600 text-white rounded-2xl p-6 shadow-lg mb-6 text-center">
+                    <div class="text-sm opacity-80 mb-1">總支出 (¥)</div>
+                    <div class="text-4xl font-bold font-mono">{{ totalExpense.toLocaleString() }}</div>
+                    <div class="text-xs opacity-60 mt-2">約 HK$ {{ Math.round(totalExpense * 0.05).toLocaleString() }} (匯率 0.05)</div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm p-4 mb-6 border border-slate-100">
+                    <div class="flex gap-2 mb-2">
+                        <input v-model="newExpense.item" placeholder="項目" class="flex-1 bg-slate-50 rounded-lg text-sm px-3 py-2">
+                        <select v-model="newExpense.type" class="bg-slate-50 rounded-lg text-sm px-2">
+                            <option value="food">食</option>
+                            <option value="shop">購</option>
+                            <option value="transport">行</option>
+                            <option value="other">他</option>
+                        </select>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <span class="absolute left-3 top-2 text-slate-400">¥</span>
+                            <input v-model.number="newExpense.amount" type="number" placeholder="0" class="w-full bg-slate-50 rounded-lg text-sm pl-7 py-2">
+                        </div>
+                        <button @click="addExpense" class="bg-indigo-600 text-white px-4 rounded-lg"><i class="ph-bold ph-plus"></i></button>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <div v-for="(exp, idx) in expenses" :key="idx" class="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                        <div>
+                            <div class="font-bold text-slate-700 text-sm">{{ exp.item }}</div>
+                            <div class="text-[10px] text-slate-400">{{ exp.date }} | {{ getTypeName(exp.type) }}</div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="font-mono font-bold text-slate-700">¥{{ exp.amount.toLocaleString() }}</span>
+                            <button @click="removeExpense(idx)" class="text-slate-300 hover:text-red-400"><i class="ph-fill ph-x-circle"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                const viewMode = ref('plan');
+                const currentDayIdx = ref(0);
+                const isMapLoading = ref(false);
+
+                // *** 這裡填入你的 MD 檔案轉換後的資料 ***
+                const days = ref([
+                    {
+                        shortDate: '11/29', date: 'Day1 (29/11)', title: '鎌倉 KAMAKURA', weatherTip: '穿方便走路的鞋',
+                        items: [
+                            { time: '06:55', type: 'transport', activity: '抵達東京成田機場', location: '成田機場', note: '入境、N\'EX取票', image: './images/A9453051-F18B-48A4-98EC-E3487CE28D6B.jpeg' },
+                            { time: '10:45', type: 'transport', activity: 'N\'EX 成田特快 -> 大船站', location: '大船站', note: '已預約車票', image: './images/3B8A5D9C-C67F-470D-BCA6-4DAC03455A91.png' },
+                            { time: '11:15', type: 'spot', activity: '抵達鎌倉 & 寄放行李', location: '鎌倉駅', note: 'Trip-kamakura 寄存', link: 'https://www.trip-kamakura.com/article/japanheritage-tw/21702.html', image: './images/6925196D-06C0-4591-90A4-15EF059DC1B4.png' },
+                            { time: '12:00', type: 'food', activity: 'bills 七里ガ浜 (已預約)', location: 'bills 七里ヶ浜', note: '海邊餐廳 Chill', image: './images/C4DF033B-6E5F-409A-88C8-BFDA669C3C53.png' },
+                            { time: '13:30', type: 'shop', activity: '小町通商店街', location: '小町通り', note: '逛小店、扭蛋、首飾', image: './images/2C5F8C5C-2527-47D7-99D9-BE41999DB4F1.jpeg' },
+                            { time: '15:00', type: 'stay', activity: 'Wasabi 民宿 Check-in', location: '鎌倉市 753-2 Koshigoe', note: '4人包一樓兩間房', link: 'https://www.trip.com/w/ENyaQCchrR2', image: './images/6D73D751-4D35-430F-8238-AFBA0239D64D.jpeg' },
+                            { time: '15:45', type: 'spot', activity: '鎌倉高校前 & 江之島', location: '鎌倉高校前駅', note: '灌籃高手平交道', image: './images/DEFF2780-E55A-4C1F-B9A5-22FE33E29A72.jpeg' },
+                            { time: '16:30', type: 'spot', activity: '江之島神社 & 燈塔', location: '江之島', note: '坐扶手電梯上山、看日落', image: './images/468995BF-FF76-4F39-93BC-82A6BC6A80D0.png' },
+                            { time: '18:30', type: 'food', activity: '晚餐：生魚片/壽司', location: '江之島', note: '', image: './images/7213C6B0-63D8-4F1C-B6A4-7C9748CB392C.png' },
+                            { time: '20:30', type: 'shop', activity: 'Family Mart & 回民宿', location: '', note: '' }
+                        ]
+                    },
+                    {
+                        shortDate: '11/30', date: 'Day2 (30/11)', title: '箱根 HAKONE', weatherTip: '山上冷，建議穿羽絨',
+                        items: [
+                            { time: '06:10', type: 'spot', activity: '鎌倉高校前 早晨打卡', location: '鎌倉高校前駅', note: '趁沒人拍照', image: './images/B42611D0-BE7F-4DA7-83F8-35A8E6D85C25.jpeg' },
+                            { time: '07:48', type: 'transport', activity: '出發去箱根', location: '箱根湯本', note: '經小田原，使用周遊券', image: './images/66F09B94-3480-483E-A560-802F01EB3818.png' },
+                            { time: '09:20', type: 'other', activity: '行李寄送服務', location: '箱根湯本駅', note: '寄到今晚旅館 (需預約)', link: 'https://www.hakonenavi.jp/hakone-luggage-transport-service/tw/', image: './images/A8523C67-621C-4995-98BF-9A044E038ADC.jpeg' },
+                            { time: '10:30', type: 'spot', activity: '雕刻森林美術館', location: '箱根彫刻の森美術館', note: '周遊卷優惠減100yen', image: './images/E13E4F80-E289-4EAD-B682-2CFC7707A97B.jpeg' },
+                            { time: '13:00', type: 'spot', activity: '大涌谷 & 空中纜車', location: '大涌谷', note: '吃黑蛋', image: './images/F7D28BC9-3C4D-42EA-A91E-E29DA1483254.jpeg' },
+                            { time: '14:30', type: 'transport', activity: '海賊船 (桃源台 -> 元箱根)', location: '桃源台港', note: '可加錢升頭等', image: './images/3C337273-09C0-429F-A524-72257611E156.jpeg' },
+                            { time: '17:00', type: 'stay', activity: '品之木一之湯 溫泉旅館', location: '仙石原品の木一の湯', note: '17:45 晚餐、泡溫泉', link: 'https://www.ichinoyu.co.jp/facilities/shinanoki/shinanoki-spa/', image: './images/5D14131E-1DB7-47CF-B9D4-1F00A12BF53C.jpeg' }
+                        ]
+                    },
+                    {
+                        shortDate: '12/01', date: 'Day3 (1/12)', title: '箱根+池袋 IKEBUKURO', weatherTip: '',
+                        items: [
+                            { time: '09:30', type: 'spot', activity: '箱根神社 水上鳥居', location: '箱根神社', note: '坐鴨鴨船(如有時間)', image: './images/E1B5FF4D-780C-4E99-B249-582EEAD8F83D.jpeg' },
+                            { time: '12:30', type: 'food', activity: '箱根湯本商店街 Lunch', location: '箱根湯本駅', note: '買手信、掃街', image: './images/CA66790F-E795-4274-9BA9-D80716F05171.png' },
+                            { time: '14:34', type: 'transport', activity: '前往池袋', location: '池袋', note: '經新宿轉車', image: './images/0B0808D1-F411-42DF-8B19-7811CB211EB7.png' },
+                            { time: '16:45', type: 'stay', activity: 'Check-in 池袋天然溫泉酒店', location: 'Super Hotel Premier Ikebukuro Natural Onsen', note: '有溫泉、選枕頭', link: 'https://www.trip.com/w/ZWQTGkBiwR2', image: './images/DD6E37DC-1352-4C88-86D3-36224E7A8C20.jpeg' },
+                            { time: '17:30', type: 'shop', activity: 'Sunshine City 購物', location: 'Sunshine City', note: 'Uniqlo, 動漫周邊, 女裝', image: './images/3A5BA08D-ACA7-4FDC-B34E-5004CF582097.png' },
+                            { time: '20:30', type: 'food', activity: '晚餐：燒肉 (需預約)', location: '池袋西口', note: '', image: './images/F5C637E2-5B07-4189-978F-8DC82DC380C7.png' }
+                        ]
+                    },
+                    {
+                        shortDate: '12/02', date: 'Day4 (2/12)', title: '淺草+原宿 ASAKUSA', weatherTip: '和服體驗',
+                        items: [
+                            { time: '09:00', type: 'spot', activity: '和服體驗 Mocomoco (已預約)', location: '浅草着物レンタル', note: '幫Yanme化妝', image: './images/513267D2-B389-4DFC-BA6A-BB196C9797B1.png' },
+                            { time: '10:30', type: 'spot', activity: '上野公園 攝影師拍照', location: '上野恩賜公園', note: 'Ray 攝影師 (2小時)', image: './images/259F0384-12DD-4E43-AFA1-1D31B9FA0B91.png' },
+                            { time: '13:00', type: 'food', activity: '文字燒 Lunch (已預約)', location: '淺草', note: '', image: './images/46467B2B-B7DE-461D-9464-B844E3ECE5EA.png' },
+                            { time: '14:00', type: 'shop', activity: '淺草逛街', location: '淺草', note: '咖喱包、團子', image: './images/9458DFCF-20E2-4DD6-A519-3084BD7D5794.png' },
+                            { time: '17:15', type: 'food', activity: 'Chiikawa Bakery (需預約)', location: '原宿', note: '買麵包', link: 'https://s.klook.com/c/E3_Y6dV_XY', image: './images/0BB03C10-4993-4A74-9AF0-D5ED12779973.jpeg' },
+                            { time: '19:30', type: 'shop', activity: 'GU Shibuya & 藥妝', location: '渋谷', note: 'GU(21:00關), 藥妝(23:00關)', image: './images/5F4FDC76-50EA-484F-A85E-84B56A3B066F.png' }
+                        ]
+                    },
+                    {
+                        shortDate: '12/03', date: 'Day5 (3/12)', title: '高尾山 | 新宿 | 成田', weatherTip: 'Melody去爬山 / Yanme去機場',
+                        items: [
+                            { time: '08:00', type: 'spot', activity: '[Melody] 高尾山健行', location: '高尾山', note: '一定要穿布鞋，看紅葉', image: './images/C04F8F4D-E423-41DE-B48D-C7C35163EA3C.png' },
+                            { time: '10:00', type: 'spot', activity: '[Yanme] Mipig cafe (需預約)', location: 'Sunshine City', note: '玩豬豬、逛街', image: './images/0F5C4D49-84AE-48D9-9081-0156BE212BB4.png' },
+                            { time: '13:00', type: 'shop', activity: '[Melody] 新宿購物', location: '新宿', note: 'Kiddy Land, Lumine', image: './images/10E20D2C-765C-4720-827C-1A068AA03377.png' },
+                            { time: '13:55', type: 'transport', activity: '[Yanme] 成田機場 Check-in', location: '成田機場', note: '16:55 起飛', image: '' },
+                            { time: '15:30', type: 'spot', activity: '[Melody] 芝公園+東京鐵塔', location: '東京タワー', note: 'Winter Fantasia 燈光秀', image: './images/130DAA6A-3A81-40AC-A7B0-8B968AEE8AFE.png' },
+                            { time: '19:00', type: 'food', activity: '[Melody] 赤羽 牡蠣放題 (需預約)', location: '赤羽', note: '6500円一位', image: './images/46ED22A1-0C9D-4A76-8FD1-FEE4925E958D.heic' }
+                        ]
+                    },
+                    {
+                        shortDate: '12/04', date: 'Day6 (4/12)', title: 'Disney Sea 迪士尼海洋', weatherTip: '人流預測 C級 (人少)',
+                        items: [
+                            { time: '06:30', type: 'transport', activity: '出發去 Disney Sea', location: 'Tokyo DisneySea', note: '早起排隊！', image: './images/1CBB2464-C976-405A-9814-DB8776FDDC94.png' },
+                            { time: '08:30', type: 'spot', activity: 'Disney Sea Play Play Play', location: 'Tokyo DisneySea', note: 'Fantasy Springs', image: '' },
+                            { time: '21:00', type: 'food', activity: 'Lawson 宵夜', location: '池袋', note: '', image: './images/2CA3F974-07AE-4A55-B010-05B1147F44FC.heic' }
+                        ]
+                    },
+                    {
+                        shortDate: '12/05', date: 'Day7 (5/12)', title: '橫濱 YOKOHAMA', weatherTip: '',
+                        items: [
+                            { time: '10:00', type: 'spot', activity: '山下公園', location: '山下公園', note: '看銀杏、海景', image: './images/258E07E4-5391-483C-A240-B525E096C3F3.png' },
+                            { time: '12:45', type: 'transport', activity: '空中纜車', location: '横浜エアキャビン', note: '去海邊', image: './images/D4DCC893-53DC-426C-B32D-2B806BBE6594.png' },
+                            { time: '14:15', type: 'spot', activity: 'AniTouch 動物園 (需預約)', location: 'Minatomirai', note: '摸樹懶、水豚', link: 'https://www.anitouch.jp/zh-tw/', image: './images/5588189B-A86A-4ADF-849E-C29790534041.png' },
+                            { time: '17:30', type: 'spot', activity: '摩天輪 Cosmo Clock 21', location: 'Yokohama Cosmo World', note: '看夜景', image: '' },
+                            { time: '18:30', type: 'spot', activity: '紅磚倉庫聖誕市集 (需預約)', location: '赤レンガ倉庫', note: '氣氛超好', image: '' },
+                            { time: '21:00', type: 'food', activity: 'Omakase 晚餐 (已預約)', location: 'Sushi Tokyo Ten', note: '壽司', link: 'https://www.tablecheck.com/zh-TW/shops/sushitokyo-ten-yokohama/reserve', image: './images/E454BE39-9B1F-4A34-9149-34D81CE6D8B9.png' }
+                        ]
+                    },
+                    {
+                        shortDate: '12/06', date: 'Day8 (6/12)', title: '返程 BACK HOME', weatherTip: '最後補貨',
+                        items: [
+                            { time: '09:30', type: 'other', activity: 'Check-out & 寄行李', location: '池袋酒店', note: '', image: '' },
+                            { time: '10:30', type: 'spot', activity: 'Mipig cafe (需預約)', location: 'Sunshine City', note: '玩豬豬', image: '' },
+                            { time: '11:00', type: 'shop', activity: '最後購物 & Lunch', location: '東武百貨', note: '銀座 篝 拉麵 / 真鯛拉麵', image: '' },
+                            { time: '15:30', type: 'transport', activity: '抵達成田機場', location: '成田機場', note: '16:30 Check-in, 買手信', image: '' },
+                            { time: '19:00', type: 'transport', activity: '飛往香港 🛫', location: '', note: '平安回家', image: '' }
+                        ]
+                    }
+                ]);
+
+                const expenses = ref([]);
+                const newExpense = ref({ item: '', amount: '', type: 'food' });
+
+                // 計算屬性
+                const currentDay = computed(() => days.value[currentDayIdx.value]);
+                
+                const totalExpense = computed(() => {
+                    return expenses.value.reduce((sum, item) => sum + item.amount, 0);
+                });
+
+                // 方法
+                const getTypeName = (type) => {
+                    const map = { spot: '景點', food: '美食', shop: '購物', transport: '交通', stay: '住宿', other: '其他' };
+                    return map[type] || '其他';
+                };
+
+                const getTypeColor = (type) => {
+                    const map = { 
+                        spot: 'bg-indigo-500', food: 'bg-orange-500', shop: 'bg-pink-500', 
+                        transport: 'bg-blue-500', stay: 'bg-green-600', other: 'bg-slate-400' 
+                    };
+                    return map[type];
+                };
+
+                const getGoogleMapLink = (loc) => {
+                    if(!loc) return '#';
+                    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc)}`;
+                };
+
+                const handleImageError = (e) => {
+                    e.target.style.display = 'none'; // 圖片載入失敗時隱藏
+                };
+
+                // 簡單的 LocalStorage 存取 (取代 Firebase)
+                const saveToLocal = () => {
+                    localStorage.setItem('tokyo_trip_data', JSON.stringify(days.value));
+                    localStorage.setItem('tokyo_trip_expenses', JSON.stringify(expenses.value));
+                };
+
+                const addItem = () => {
+                    days.value[currentDayIdx.value].items.push({ 
+                        time: '12:00', type: 'spot', activity: '', location: '', note: '', image: '' 
+                    });
+                    saveToLocal();
+                };
+
+                const addExpense = () => {
+                    if(!newExpense.value.item || !newExpense.value.amount) return;
+                    expenses.value.unshift({ 
+                        ...newExpense.value, 
+                        date: new Date().toLocaleDateString('zh-TW', {month:'numeric', day:'numeric'}) 
+                    });
+                    newExpense.value.item = '';
+                    newExpense.value.amount = '';
+                    saveToLocal();
+                };
+
+                const removeExpense = (idx) => {
+                    expenses.value.splice(idx, 1);
+                    saveToLocal();
+                };
+
+                // 地圖功能
+                let mapInstance = null;
+                const initMap = async () => {
+                    isMapLoading.value = true;
+                    await nextTick();
+                    if (!document.getElementById('map')) return;
+                    
+                    if (mapInstance) {
+                        mapInstance.remove();
+                        mapInstance = null;
+                    }
+
+                    mapInstance = L.map('map').setView([35.6895, 139.6917], 11);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap'
+                    }).addTo(mapInstance);
+
+                    // 批次查詢座標 (Nominatim)
+                    const items = currentDay.value.items.filter(i => i.location);
+                    const group = L.featureGroup();
+
+                    for (const item of items) {
+                        try {
+                            // 簡單延遲避免 API 限制
+                            await new Promise(r => setTimeout(r, 600)); 
+                            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(item.location)}`);
+                            const data = await res.json();
+                            if (data && data.length > 0) {
+                                const lat = data[0].lat;
+                                const lon = data[0].lon;
+                                const marker = L.marker([lat, lon]).addTo(mapInstance);
+                                marker.bindPopup(`<b>${item.activity}</b><br>${item.location}`);
+                                group.addLayer(marker);
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+                    
+                    if(group.getLayers().length > 0) {
+                        group.addTo(mapInstance);
+                        mapInstance.fitBounds(group.getBounds(), { padding: [50, 50] });
+                    }
+                    isMapLoading.value = false;
+                };
+
+                // 監聽變更並儲存
+                watch(days, saveToLocal, { deep: true });
+                watch(viewMode, (val) => {
+                    if(val === 'map') initMap();
+                });
+                watch(currentDayIdx, () => {
+                    if(viewMode.value === 'map') initMap();
+                });
+
+                onMounted(() => {
+                    const savedDays = localStorage.getItem('tokyo_trip_data');
+                    const savedExp = localStorage.getItem('tokyo_trip_expenses');
+                    if(savedDays) days.value = JSON.parse(savedDays);
+                    if(savedExp) expenses.value = JSON.parse(savedExp);
+                });
+
+                return {
+                    viewMode, currentDayIdx, days, currentDay, isMapLoading,
+                    expenses, newExpense, totalExpense,
+                    getTypeName, getTypeColor, getGoogleMapLink, handleImageError,
+                    addItem, addExpense, removeExpense, initMap
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
